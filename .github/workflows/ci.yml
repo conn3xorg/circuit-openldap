@@ -1,0 +1,104 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Conn3x
+        env: &gh
+          GH_TOKEN: ${{ github.token }}
+        run: &install |
+          tag=$(gh release view -R conn3xorg/conn3x --json tagName -q .tagName)
+          file="conn3x_${tag#v}_linux_amd64.tar.gz"
+          cd "$RUNNER_TEMP"
+          curl -sSfLO "https://github.com/conn3xorg/conn3x/releases/download/$tag/$file"
+          curl -sSfLO "https://github.com/conn3xorg/conn3x/releases/download/$tag/checksums.txt"
+          grep " $file\$" checksums.txt | sha256sum -c -
+          mkdir -p bin && tar -xzf "$file" -C bin conn3x
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - run: conn3x version
+      - run: conn3x fmt -check -recursive
+      - name: Validate
+        run: conn3x init -backend=false && conn3x validate
+      - name: Validate the example
+        working-directory: examples/local
+        run: conn3x init -backend=false && conn3x validate
+
+  e2e:
+    needs: validate
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        # Fedora is left out: its openldap-servers can't load its own core
+        # schema. See the README.
+        distro: [rocky10, ubuntu2404, debian13]
+    name: e2e (${{ matrix.distro }})
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The test host images live in the Conn3x repo.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: conn3xorg/conn3x
+          ref: main
+          path: conn3x
+          persist-credentials: false
+          sparse-checkout: test/images
+      - name: Install Conn3x
+        env: *gh
+        run: *install
+      - name: Start the ${{ matrix.distro }} host
+        working-directory: examples/local
+        env:
+          CONTAINERFILE: ${{ github.workspace }}/conn3x/test/images/${{ matrix.distro }}/Containerfile
+        run: ./up.sh
+      - name: Apply, then plan again with no changes
+        working-directory: examples/local
+        env:
+          TF_VAR_root_password: ci-only-root-pass-1
+        run: |
+          conn3x init
+          conn3x apply -auto-approve
+          conn3x plan -detailed-exitcode
+      # The root DN finds the base, an OU and the example's entries, an
+      # anonymous search and a wrong password are refused, and cn=config
+      # holds only a hash of the password.
+      - name: Search as the root DN, and check anonymous access is refused
+        run: &check |
+          podman exec -i circuit-openldap sh -eu <<'EOF'
+          b=dc=example,dc=test
+          search() { ldapsearch -x -LLL -H ldap://127.0.0.1:389 -D "cn=admin,$b" -w ci-only-root-pass-1 "$@"; }
+          systemctl is-active slapd
+          search -b "$b" -s base dn | grep -qx "dn: $b"
+          search -b "ou=people,$b" -s base dn | grep -qx "dn: ou=people,$b"
+          search -b "ou=people,$b" "(uid=ada)" cn | grep -qx "cn: Ada Lovelace"
+          search -b "$b" "(cn=engineers)" member | grep -qx "member: uid=ada,ou=people,$b"
+          if ldapsearch -x -LLL -H ldap://127.0.0.1:389 -b "$b" -s base dn >/dev/null 2>&1; then exit 1; fi
+          if ldapsearch -x -LLL -H ldap://127.0.0.1:389 -D "cn=admin,$b" -w wrong-password-1 -b "$b" -s base dn >/dev/null 2>&1; then exit 1; fi
+          grep -q "^olcRootPW:: " /etc/*ldap/slapd.d/cn=config/olcDatabase=\{1\}mdb.ldif
+          if grep -rq ci-only-root-pass-1 /etc/*ldap/slapd.d; then exit 1; fi
+          EOF
+      - name: Restart the host, then check the data is still there
+        run: |
+          podman restart circuit-openldap
+          podman exec circuit-openldap timeout 60 systemctl is-system-running --wait || true
+      - name: Search again after the restart
+        run: *check
+      - name: Clean up
+        if: always()
+        working-directory: examples/local
+        run: ./down.sh
