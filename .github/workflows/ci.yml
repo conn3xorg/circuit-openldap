@@ -96,6 +96,8 @@ jobs:
         run: |
           podman restart circuit-openldap
           podman exec circuit-openldap timeout 60 systemctl is-system-running --wait || true
+          # A slow boot can end that wait with slapd still starting.
+          podman exec circuit-openldap timeout 60 sh -c 'until systemctl is-active -q slapd; do sleep 1; done'
       - name: Search again after the restart
         run: *check
       - name: Clean up
