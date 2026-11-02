@@ -1,5 +1,7 @@
 # circuit-openldap
 
+[![Conn3x grade](https://conn3x.org/circuits/openldap/grade.svg)](https://conn3x.org/circuits/openldap/grade)
+
 A Conn3x circuit that runs [OpenLDAP](https://www.openldap.org)'s `slapd`, the LDAP server most other directories get measured against. You give it a base DN and a root password; it installs slapd from your distribution, builds its `cn=config` from scratch, loads the schemas you list, creates your OUs and adds entries from an LDIF you pass in. Then you point SSSD, Postfix, Nextcloud, Keycloak or anything else that speaks LDAP at it.
 
 Out of the box slapd listens only on `127.0.0.1:389`, plus a local `ldapi:///` socket that root manages `cn=config` through. Anonymous binds are refused and every operation has to authenticate first, so nobody reads your directory without a password. Hand it a certificate and key, from [circuit-certbot](https://github.com/conn3xorg/circuit-certbot) or your own CA, and it serves LDAPS and StartTLS too.
