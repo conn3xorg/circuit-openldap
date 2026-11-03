@@ -74,6 +74,16 @@ jobs:
           conn3x init
           conn3x apply -auto-approve
           conn3x plan -detailed-exitcode
+      # The example's secrets reach the host write-only, so state holds
+      # none of them, and nothing Conn3x writes under .terraform does either.
+      # .terraform/modules is left out: it holds downloaded module code.
+      - name: Check the secrets stay out of state
+        working-directory: examples/local
+        run: |
+          if grep -rqF --exclude-dir=modules -e ci-only-root-pass-1 terraform.tfstate .terraform/; then
+            echo "A secret from the example is in terraform.tfstate or under .terraform/." >&2
+            exit 1
+          fi
       # The root DN finds the base, an OU and the example's entries, an
       # anonymous search and a wrong password are refused, and cn=config
       # holds only a hash of the password.
