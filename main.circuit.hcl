@@ -55,7 +55,7 @@ locals {
 
   # EPEL's openldap-servers is built without the argon2 module, so the Red
   # Hat rebuilds hash the root password with salted SHA-1 instead.
-  argon2 = { for name, o in local.os : name => !contains(["rocky", "almalinux", "rhel", "centos"], o) }
+  argon2 = { for name, o in local.os : name => !contains(["rocky", "almalinux", "rhel"], o) }
 
   # Debian builds the mdb backend as a module; Fedora and EPEL build it in.
   modules = { for name, d in local.debian : name => concat(d ? ["back_mdb"] : [], local.argon2[name] ? ["argon2"] : []) }

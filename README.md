@@ -28,7 +28,7 @@ variable "ldap_root_password" {
 }
 
 module "openldap" {
-  source = "github.com/conn3xorg/circuit-openldap?ref=v0.1.1"
+  source = "github.com/conn3xorg/circuit-openldap?ref=v0.2.0"
 
   hosts                = { ldap1 = "203.0.113.10" }
   ssh_private_key_file = "~/.ssh/id_ed25519"
