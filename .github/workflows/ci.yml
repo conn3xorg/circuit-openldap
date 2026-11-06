@@ -44,7 +44,7 @@ jobs:
       matrix:
         # Fedora is left out: its openldap-servers can't load its own core
         # schema. See the README.
-        distro: [rocky10, ubuntu2404, debian13]
+        distro: [rocky10, ubuntu2404, debian13, debian12, rocky9]
     name: e2e (${{ matrix.distro }})
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -64,7 +64,12 @@ jobs:
       - name: Start the ${{ matrix.distro }} host
         working-directory: examples/local
         env:
-          CONTAINERFILE: ${{ github.workspace }}/conn3x/test/images/${{ matrix.distro }}/Containerfile
+          # Conn3x has no Debian 12 or Rocky Linux 9 test images, so those
+          # live here.
+          CONTAINERFILE: ${{ github.workspace }}/${{ (matrix.distro == 'debian12' || matrix.distro == 'rocky9') && 'test/images' || 'conn3x/test/images' }}/${{ matrix.distro }}/Containerfile
+          # Rootless, Rocky Linux 9's sshd refused root at PAM on GitHub's
+          # runners. Rootful, it lets root in.
+          PODMAN: sudo podman
         run: ./up.sh
       - name: Apply, then plan again with no changes
         working-directory: examples/local
@@ -89,7 +94,7 @@ jobs:
       # holds only a hash of the password.
       - name: Search as the root DN, and check anonymous access is refused
         run: &check |
-          podman exec -i circuit-openldap sh -eu <<'EOF'
+          sudo podman exec -i circuit-openldap sh -eu <<'EOF'
           b=dc=example,dc=test
           search() { ldapsearch -x -LLL -H ldap://127.0.0.1:389 -D "cn=admin,$b" -w ci-only-root-pass-1 "$@"; }
           systemctl is-active slapd
@@ -104,13 +109,39 @@ jobs:
           EOF
       - name: Restart the host, then check the data is still there
         run: |
-          podman restart circuit-openldap
-          podman exec circuit-openldap timeout 60 systemctl is-system-running --wait || true
+          sudo podman restart circuit-openldap
+          sudo podman exec circuit-openldap timeout 60 systemctl is-system-running --wait || true
           # A slow boot can end that wait with slapd still starting.
-          podman exec circuit-openldap timeout 60 sh -c 'until systemctl is-active -q slapd; do sleep 1; done'
+          sudo podman exec circuit-openldap timeout 60 sh -c 'until systemctl is-active -q slapd; do sleep 1; done'
       - name: Search again after the restart
+        run: *check
+      # A fresh host gets the last release, then this checkout is applied
+      # over it, the way someone raises the module's ref. v0.2.0 couldn't
+      # start slapd on Debian 12, so that one has nothing to upgrade from.
+      - name: Upgrade from circuit-openldap v0.2.0 on a fresh host, then plan again with no changes
+        if: matrix.distro != 'debian12'
+        working-directory: examples/local
+        env:
+          CONTAINERFILE: ${{ github.workspace }}/${{ matrix.distro == 'rocky9' && 'test/images' || 'conn3x/test/images' }}/${{ matrix.distro }}/Containerfile
+          PODMAN: sudo podman
+          TF_VAR_root_password: ci-only-root-pass-1
+        run: |
+          ./down.sh
+          ./up.sh
+          sed -i 's|source = "../.."|source = "github.com/conn3xorg/circuit-openldap?ref=v0.2.0"|' main.tf
+          grep -q 'ref=v0.2.0' main.tf
+          conn3x init
+          conn3x apply -auto-approve
+          git checkout -- main.tf
+          conn3x init
+          conn3x apply -auto-approve
+          conn3x plan -detailed-exitcode
+      - name: Search again after the upgrade
+        if: matrix.distro != 'debian12'
         run: *check
       - name: Clean up
         if: always()
         working-directory: examples/local
+        env:
+          PODMAN: sudo podman
         run: ./down.sh

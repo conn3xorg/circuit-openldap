@@ -28,6 +28,9 @@ locals {
   os     = { for name, h in var.hosts : name => try(h.os, data.conn3x_host.facts[name].os_id) }
   debian = { for name, o in local.os : name => contains(["debian", "ubuntu"], o) }
 
+  # Debian 13 ships a native unit for slapd; Debian 12 and Ubuntu don't.
+  init_script = { for name, o in local.os : name => o == "ubuntu" || (o == "debian" && data.conn3x_host.facts[name].os_version == "12") }
+
   debian_hosts = { for name, h in var.hosts : name => h if local.debian[name] }
 
   # Rocky Linux and AlmaLinux ship epel-release in their own extras
@@ -311,14 +314,15 @@ circuit "openldap" {
     }
   }
 
-  # Ubuntu 24.04 still runs slapd from an init script, which its package
-  # links into the runlevels. systemd reports that unit as generated rather
-  # than enabled, so Conn3x leaves its boot setting alone there.
+  # Ubuntu 24.04 and Debian 12 still run slapd from an init script, which
+  # the package links into the runlevels. systemd reports that unit as
+  # generated rather than enabled, so Conn3x leaves its boot setting alone
+  # there.
   step "running" {
     service {
       name    = "slapd"
       state   = "started"
-      enabled = local.os[each.key] == "ubuntu" ? null : true
+      enabled = local.init_script[each.key] ? null : true
     }
   }
 
