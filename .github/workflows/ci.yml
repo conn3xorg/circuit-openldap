@@ -111,6 +111,9 @@ jobs:
           podman exec circuit-openldap timeout 60 sh -c 'until systemctl is-active -q slapd; do sleep 1; done'
       - name: Search again after the restart
         run: *check
+      - name: Show sshd's log
+        if: failure()
+        run: podman exec circuit-openldap journalctl -u sshd --no-pager -n 60 || true
       - name: Clean up
         if: always()
         working-directory: examples/local
