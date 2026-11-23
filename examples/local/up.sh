@@ -15,7 +15,9 @@ podman=${PODMAN:-podman}
 $podman build -q -f "$containerfile" -t "$name" "$(dirname "$containerfile")" >/dev/null
 $podman rm -f -v "$name" >/dev/null 2>&1 || true
 # PAM needs DAC_OVERRIDE and AUDIT_WRITE, which some Podman versions drop.
-$podman run -d --name "$name" --systemd=always --cap-add DAC_OVERRIDE,AUDIT_WRITE \
+# Ubuntu 24.04's init script stops slapd by checking /proc/PID/exe,
+# which root can't read for a process that changed user without SYS_PTRACE.
+$podman run -d --name "$name" --systemd=always --cap-add DAC_OVERRIDE,AUDIT_WRITE,SYS_PTRACE \
   -p "127.0.0.1:$port:22" "$name" >/dev/null
 $podman exec -i "$name" sh -c 'cat > /root/.ssh/authorized_keys && chmod 600 /root/.ssh/authorized_keys' < id_ed25519.pub
 $podman exec "$name" timeout 60 systemctl is-system-running --wait >/dev/null 2>&1 || true
