@@ -305,8 +305,8 @@ circuit "openldap" {
   # A step rather than a handler, so the steps below talk to the slapd
   # that listens where the file says.
   step "restart" {
-    command {
-      command = "systemctl daemon-reload && systemctl restart slapd"
+    service_action {
+      name = "slapd"
       triggers = {
         bootstrap = conn3x_command.openldap__bootstrap[each.key].revision
         listen    = conn3x_file.openldap__listen[each.key].revision
@@ -332,7 +332,7 @@ circuit "openldap" {
     command {
       command  = "for _ in $(seq 60); do ldapwhoami -Q -Y EXTERNAL -H ldapi:/// >/dev/null 2>&1 && exit 0; sleep 1; done; exit 1"
       unless   = "ldapwhoami -Q -Y EXTERNAL -H ldapi:/// >/dev/null 2>&1"
-      triggers = { restart = conn3x_command.openldap__restart[each.key].revision }
+      triggers = { restart = conn3x_service_action.openldap__restart[each.key].revision }
     }
   }
 

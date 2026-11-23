@@ -145,7 +145,7 @@ The access rules let a user change their own password, let anyone bind to check 
 
 ## Requirements
 
-Requires Conn3x v0.6.9 or later and systemd on each host, with a package mirror the host can reach. On Rocky Linux and AlmaLinux, the host also needs to reach EPEL's mirrors; on RHEL, EPEL must already be on.
+Requires Conn3x v0.28.0 or later and systemd on each host, with a package mirror the host can reach. On Rocky Linux and AlmaLinux, the host also needs to reach EPEL's mirrors; on RHEL, EPEL must already be on.
 
 ### Fedora
 
