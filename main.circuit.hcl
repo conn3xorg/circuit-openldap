@@ -120,7 +120,7 @@ locals {
     objectClass: olcSchemaConfig
     cn: schema
 
-    include: file://${p.etc}/schema/core.ldif
+    include: file://${p.etc}/conn3x/core.ldif
 
     dn: olcDatabase={-1}frontend,cn=config
     objectClass: olcDatabaseConfig
@@ -285,6 +285,10 @@ circuit "openldap" {
         systemctl stop slapd 2>/dev/null || true
         rm -rf ${local.paths[each.key].etc}/slapd.d
         mkdir -m 0750 ${local.paths[each.key].etc}/slapd.d
+        # slapadd from OpenLDAP 2.6.13 on misreads an attribute whose values
+        # another attribute splits, as core.ldif's olcAttributeTypes are, so
+        # the copy it loads has the object classes moved to the end.
+        awk '/^#/ || /^$/ { next } /^[^ ]/ { k = $1 } k == "olcObjectClasses:" { o = o $0 "\n"; next } { print } END { printf "%s", o }' ${local.paths[each.key].etc}/schema/core.ldif > ${local.paths[each.key].etc}/conn3x/core.ldif
         slapadd -q -n 0 -F ${local.paths[each.key].etc}/slapd.d -l ${local.paths[each.key].etc}/conn3x/bootstrap.ldif
         chown -R ${local.paths[each.key].user}:${local.paths[each.key].user} ${local.paths[each.key].etc}/slapd.d ${local.data_dir}
         chmod 0700 ${local.data_dir}

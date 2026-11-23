@@ -117,12 +117,13 @@ jobs:
         run: *check
       # A fresh host gets the last release, then this checkout is applied
       # over it, the way someone raises the module's ref. v0.2.0 couldn't
-      # start slapd on Debian 12, so that one has nothing to upgrade from.
+      # start slapd on Debian 12, and can't load the core schema with EPEL's
+      # OpenLDAP 2.6.13 on Rocky Linux, so those have nothing to upgrade from.
       - name: Upgrade from circuit-openldap v0.2.0 on a fresh host, then plan again with no changes
-        if: matrix.distro != 'debian12'
+        if: matrix.distro == 'ubuntu2404' || matrix.distro == 'debian13'
         working-directory: examples/local
         env:
-          CONTAINERFILE: ${{ github.workspace }}/${{ matrix.distro == 'rocky9' && 'test/images' || 'conn3x/test/images' }}/${{ matrix.distro }}/Containerfile
+          CONTAINERFILE: ${{ github.workspace }}/conn3x/test/images/${{ matrix.distro }}/Containerfile
           PODMAN: sudo podman
           TF_VAR_root_password: ci-only-root-pass-1
         run: |
@@ -137,7 +138,7 @@ jobs:
           conn3x apply -auto-approve
           conn3x plan -detailed-exitcode
       - name: Search again after the upgrade
-        if: matrix.distro != 'debian12'
+        if: matrix.distro == 'ubuntu2404' || matrix.distro == 'debian13'
         run: *check
       - name: Clean up
         if: always()
