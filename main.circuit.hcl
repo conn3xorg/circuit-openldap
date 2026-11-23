@@ -120,7 +120,7 @@ locals {
     objectClass: olcSchemaConfig
     cn: schema
 
-    include: file://${p.etc}/schema/core.ldif
+    include: file://${p.etc}/conn3x/core.ldif
 
     dn: olcDatabase={-1}frontend,cn=config
     objectClass: olcDatabaseConfig
@@ -285,6 +285,10 @@ circuit "openldap" {
         systemctl stop slapd 2>/dev/null || true
         rm -rf ${local.paths[each.key].etc}/slapd.d
         mkdir -m 0750 ${local.paths[each.key].etc}/slapd.d
+        # slapadd from OpenLDAP 2.6.13 on misreads an attribute whose values
+        # another attribute splits, as core.ldif's olcAttributeTypes are, so
+        # the copy it loads has the object classes moved to the end.
+        awk '/^#/ || /^$/ { next } /^[^ ]/ { k = $1 } k == "olcObjectClasses:" { o = o $0 "\n"; next } { print } END { printf "%s", o }' ${local.paths[each.key].etc}/schema/core.ldif > ${local.paths[each.key].etc}/conn3x/core.ldif
         slapadd -q -n 0 -F ${local.paths[each.key].etc}/slapd.d -l ${local.paths[each.key].etc}/conn3x/bootstrap.ldif
         chown -R ${local.paths[each.key].user}:${local.paths[each.key].user} ${local.paths[each.key].etc}/slapd.d ${local.data_dir}
         chmod 0700 ${local.data_dir}
@@ -305,8 +309,8 @@ circuit "openldap" {
   # A step rather than a handler, so the steps below talk to the slapd
   # that listens where the file says.
   step "restart" {
-    command {
-      command = "systemctl daemon-reload && systemctl restart slapd"
+    service_action {
+      name = "slapd"
       triggers = {
         bootstrap = conn3x_command.openldap__bootstrap[each.key].revision
         listen    = conn3x_file.openldap__listen[each.key].revision
@@ -332,7 +336,7 @@ circuit "openldap" {
     command {
       command  = "for _ in $(seq 60); do ldapwhoami -Q -Y EXTERNAL -H ldapi:/// >/dev/null 2>&1 && exit 0; sleep 1; done; exit 1"
       unless   = "ldapwhoami -Q -Y EXTERNAL -H ldapi:/// >/dev/null 2>&1"
-      triggers = { restart = conn3x_command.openldap__restart[each.key].revision }
+      triggers = { restart = conn3x_service_action.openldap__restart[each.key].revision }
     }
   }
 
